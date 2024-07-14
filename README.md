@@ -1,4 +1,20 @@
-## Docker composeを使わない場合
+## docker-composeを使う場合
+### イメージの作成&コンテナの起動
+```
+docker compose up -d
+```
+
+### コンテナ停止
+```
+docker compose stop
+```
+
+### コンテナ削除
+```
+docker compose down -v
+```
+
+## docker-composeを使わない場合
 ### Dockerイメージの作成
 ```
 docker build -t [リポジトリ名]:[タグ名] .
