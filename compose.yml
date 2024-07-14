@@ -1,0 +1,12 @@
+services:
+  platform: linux/arm64  # サービスが稼働するプラットフォームを指定 (ARM64アーキテクチャ)
+  build:
+    context: .  # Dockerfileのあるディレクトリを指定
+    dockerfile: Dockerfile.server  # 使用するDockerfileのパスを指定
+    args:
+      github_account: onishi-teppei  # Dockerイメージのビルド時に使用する引数を指定
+  container_name: practice_docker_arm64  # コンテナの名前を指定
+  privileged: true  # コンテナを特権モードで起動するかどうかを指定
+  command: ["/usr/sbin/init"]  # コンテナが起動した際に実行するコマンドを指定
+  ports:
+    - "10022:22"  # ホストマシンのポート10022をコンテナのポート22にマッピング
