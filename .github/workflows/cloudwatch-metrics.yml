@@ -1,0 +1,179 @@
+name: CloudWatch Metrics to Issue
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  fetch-cloudwatch-metrics:
+    # /cloudwatch で始まるコメントのみ処理
+    if: startsWith(github.event.comment.body, '/cloudwatch')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Parse command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          echo "Full command: $COMMENT"
+          
+          # コマンドをパース
+          # 例: /cloudwatch aurora cpu
+          # 例: /cloudwatch aurora cpu 2025-11-14T08:00:00 2025-11-14T09:00:00
+          
+          # デフォルト値
+          RESOURCE_TYPE="aurora"
+          METRIC_NAME="CPUUtilization"
+          START_TIME="-PT3H"  # 3時間前
+          END_TIME="PT0H"     # 現在
+          
+          # コマンドを分解
+          IFS=' ' read -ra PARTS <<< "$COMMENT"
+          
+          if [ ${#PARTS[@]} -ge 3 ]; then
+            RESOURCE_TYPE="${PARTS[1]}"
+            METRIC_NAME="${PARTS[2]}"
+          fi
+          
+          if [ ${#PARTS[@]} -ge 5 ]; then
+            START_TIME="${PARTS[3]}"
+            END_TIME="${PARTS[4]}"
+          fi
+          
+          echo "resource_type=$RESOURCE_TYPE" >> $GITHUB_OUTPUT
+          echo "metric_name=$METRIC_NAME" >> $GITHUB_OUTPUT
+          echo "start_time=$START_TIME" >> $GITHUB_OUTPUT
+          echo "end_time=$END_TIME" >> $GITHUB_OUTPUT
+      
+      - name: Configure AWS credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=ap-northeast-1" >> $GITHUB_ENV
+      
+      - name: Get CloudWatch metrics image
+        id: metrics
+        run: |
+          RESOURCE_TYPE="${{ steps.parse.outputs.resource_type }}"
+          METRIC_NAME="${{ steps.parse.outputs.metric_name }}"
+          START_TIME="${{ steps.parse.outputs.start_time }}"
+          END_TIME="${{ steps.parse.outputs.end_time }}"
+          
+          # メトリクス名を正規化
+          case "$METRIC_NAME" in
+            cpu)
+              METRIC_NAME="CPUUtilization"
+              ;;
+            connections|conn)
+              METRIC_NAME="DatabaseConnections"
+              ;;
+            memory|mem)
+              METRIC_NAME="FreeableMemory"
+              ;;
+          esac
+          
+          # リソースタイプに応じてDBClusterIdentifierを設定
+          # 実際の環境に合わせて変更してください
+          case "$RESOURCE_TYPE" in
+            aurora)
+              DB_IDENTIFIER="n2rds-develop-sms-cluster"
+              NAMESPACE="AWS/RDS"
+              DIMENSION_NAME="DBClusterIdentifier"
+              ;;
+            rds)
+              DB_IDENTIFIER="n2rds-develop-sms-instance-c"
+              NAMESPACE="AWS/RDS"
+              DIMENSION_NAME="DBInstanceIdentifier"
+              ;;
+            *)
+              echo "Unknown resource type: $RESOURCE_TYPE"
+              exit 1
+              ;;
+          esac
+          
+          # MetricWidget JSON作成
+          WIDGET_JSON=$(cat <<EOF
+          {
+            "metrics": [
+              ["$NAMESPACE", "$METRIC_NAME", {"$DIMENSION_NAME": "$DB_IDENTIFIER"}]
+            ],
+            "period": 300,
+            "stat": "Average",
+            "region": "ap-northeast-1",
+            "title": "$RESOURCE_TYPE $METRIC_NAME",
+            "width": 1200,
+            "height": 400,
+            "start": "$START_TIME",
+            "end": "$END_TIME",
+            "timezone": "+0900"
+          }
+          EOF
+          )
+          
+          echo "Widget JSON:"
+          echo "$WIDGET_JSON"
+          
+          # CloudWatch画像取得
+          aws cloudwatch get-metric-widget-image \
+            --metric-widget "$WIDGET_JSON" \
+            --output-format png \
+            --output text | base64 -d > metric.png
+          
+          # ファイルサイズ確認
+          FILE_SIZE=$(stat -f%z metric.png 2>/dev/null || stat -c%s metric.png)
+          echo "Image size: $FILE_SIZE bytes"
+          
+          if [ $FILE_SIZE -lt 1000 ]; then
+            echo "Error: Image file is too small, probably failed"
+            exit 1
+          fi
+          
+          echo "metric_name=$METRIC_NAME" >> $GITHUB_OUTPUT
+          echo "resource_type=$RESOURCE_TYPE" >> $GITHUB_OUTPUT
+      
+      - name: Upload image to GitHub and comment
+        uses: actions/github-script@v7
+        env:
+          METRIC_NAME: ${{ steps.metrics.outputs.metric_name }}
+          RESOURCE_TYPE: ${{ steps.metrics.outputs.resource_type }}
+        with:
+          script: |
+            const fs = require('fs');
+            const metricName = process.env.METRIC_NAME;
+            const resourceType = process.env.RESOURCE_TYPE;
+            
+            // 画像をBase64エンコード
+            const imageBuffer = fs.readFileSync('metric.png');
+            const imageBase64 = imageBuffer.toString('base64');
+            
+            // GitHubに画像をアップロード（Issue添付用）
+            // Note: GitHub Markdown内でdata URIを使用
+            const body = `## CloudWatch Metrics: ${resourceType} - ${metricName}
+            
+            <img src="data:image/png;base64,${imageBase64}" alt="CloudWatch Metrics" />
+            
+            ---
+            *Generated at: ${new Date().toISOString()}*`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+      
+      - name: Handle errors
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ CloudWatchメトリクスの取得に失敗しました。ログを確認してください。'
+            });
