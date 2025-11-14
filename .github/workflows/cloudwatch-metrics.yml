@@ -135,29 +135,34 @@ jobs:
           echo "metric_name=$METRIC_NAME" >> $GITHUB_OUTPUT
           echo "resource_type=$RESOURCE_TYPE" >> $GITHUB_OUTPUT
       
-      - name: Upload image to GitHub and comment
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cloudwatch-metrics
+          path: metric.png
+          retention-days: 7
+      
+      - name: Comment on issue
         uses: actions/github-script@v7
         env:
           METRIC_NAME: ${{ steps.metrics.outputs.metric_name }}
           RESOURCE_TYPE: ${{ steps.metrics.outputs.resource_type }}
         with:
           script: |
-            const fs = require('fs');
             const metricName = process.env.METRIC_NAME;
             const resourceType = process.env.RESOURCE_TYPE;
             
-            // 画像をBase64エンコード
-            const imageBuffer = fs.readFileSync('metric.png');
-            const imageBase64 = imageBuffer.toString('base64');
-            
-            // GitHubに画像をアップロード（Issue添付用）
-            // Note: GitHub Markdown内でdata URIを使用
             const body = `## CloudWatch Metrics: ${resourceType} - ${metricName}
             
-            <img src="data:image/png;base64,${imageBase64}" alt="CloudWatch Metrics" />
+            ✅ メトリクスグラフを生成しました。
+            
+            📊 **ダウンロード**: [CloudWatch Metricsグラフ (PNG)](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+            
+            上記のリンクから「Artifacts」セクションを開いて、\`cloudwatch-metrics\`をダウンロードしてください。
             
             ---
-            *Generated at: ${new Date().toISOString()}*`;
+            *Generated at: ${new Date().toISOString()}*
+            *Run ID: ${context.runId}*`;
             
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
