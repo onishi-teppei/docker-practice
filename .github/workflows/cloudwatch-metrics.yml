@@ -23,7 +23,7 @@ jobs:
           
           # コマンドをパース
           # 例: /cloudwatch aurora cpu
-          # 例: /cloudwatch aurora cpu 2025-11-14T08:00:00 2025-11-14T09:00:00
+          # 例: /cloudwatch aurora cpu 2025-11-14T08:00:00 2025-11-14T09:00:00 (JST)
           
           # デフォルト値
           RESOURCE_TYPE="aurora"
@@ -40,8 +40,18 @@ jobs:
           fi
           
           if [ ${#PARTS[@]} -ge 5 ]; then
-            START_TIME="${PARTS[3]}"
-            END_TIME="${PARTS[4]}"
+            # JST (UTC+9) をUTCに変換
+            # 入力形式: 2025-11-14T08:00:00
+            START_TIME_JST="${PARTS[3]}"
+            END_TIME_JST="${PARTS[4]}"
+            
+            # dateコマンドを使用してJSTをUTCに変換
+            # JSTの時刻をUTCに変換 (9時間戻す)
+            START_TIME=$(TZ=Asia/Tokyo date -d "$START_TIME_JST" -u +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$START_TIME_JST" -u +"%Y-%m-%dT%H:%M:%S")
+            END_TIME=$(TZ=Asia/Tokyo date -d "$END_TIME_JST" -u +"%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$END_TIME_JST" -u +"%Y-%m-%dT%H:%M:%S")
+            
+            echo "JST Input - Start: $START_TIME_JST, End: $END_TIME_JST"
+            echo "UTC Output - Start: $START_TIME, End: $END_TIME"
           fi
           
           echo "resource_type=$RESOURCE_TYPE" >> $GITHUB_OUTPUT
