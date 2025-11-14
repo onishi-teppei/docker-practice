@@ -40,10 +40,14 @@ jobs:
           fi
           
           if [ ${#PARTS[@]} -ge 5 ]; then
-            # JST時刻をそのまま使用（CloudWatchのtimezone設定がJSTのため）
-            # 入力形式: 2025-11-14T08:00:00
-            START_TIME="${PARTS[3]}"
-            END_TIME="${PARTS[4]}"
+            # JST時刻にタイムゾーン情報を付与
+            # 入力形式: 2025-11-14T08:00:00 -> 2025-11-14T08:00:00+09:00
+            START_TIME_JST="${PARTS[3]}"
+            END_TIME_JST="${PARTS[4]}"
+            
+            # タイムゾーン情報を付与（+09:00はJST）
+            START_TIME="${START_TIME_JST}+09:00"
+            END_TIME="${END_TIME_JST}+09:00"
             
             echo "JST Input - Start: $START_TIME, End: $END_TIME"
           fi
