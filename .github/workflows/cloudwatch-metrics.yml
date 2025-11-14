@@ -99,7 +99,7 @@ jobs:
           WIDGET_JSON=$(cat <<EOF
           {
             "metrics": [
-              ["$NAMESPACE", "$METRIC_NAME", {"$DIMENSION_NAME": "$DB_IDENTIFIER"}]
+              ["$NAMESPACE", "$METRIC_NAME", "$DIMENSION_NAME", "$DB_IDENTIFIER"]
             ],
             "period": 300,
             "stat": "Average",
